@@ -15,7 +15,8 @@ def main(f):
     fh = open("patched_" + f, "r+")
     for bb in pyew.basic_blocks:
 
-        print hex(bb)
+        print "0x%x" % bb
+
         fh.seek(bb)
         bblDict[bb] = fh.read(1)
 

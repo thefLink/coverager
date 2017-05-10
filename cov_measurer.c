@@ -1,5 +1,4 @@
 #include <unistd.h>
-#include "coverager.h"
 #include <sys/types.h>
 #include <wait.h>
 #include <sys/ptrace.h>
@@ -8,6 +7,7 @@
 #include <sys/signal.h>
 
 #include "mem_map_parser.c"
+#include "cov_measurer.h"
 #include "uthash.h"
 
 #ifdef DEBUG

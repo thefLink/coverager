@@ -39,14 +39,14 @@ init(struct br_map *hlist, char *p_binary)
 }
 
 void 
-start_program (char *call_string, char *argv, char *envp[])
+start_program (char *call_string, char *argv[], char *envp[])
 {
   c_main_pid = fork();
   if (!c_main_pid){
     /* The child process */
     printf("[*] about to call execve ... \n");
     ptrace(PTRACE_TRACEME, 0, 0, 0, 0);
-    execve(call_string, NULL, envp);
+    execve(call_string, argv, envp);
     /* Not to be reached when execve succeeds */
   }else{
     /* Parent */

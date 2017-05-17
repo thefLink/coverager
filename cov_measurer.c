@@ -22,6 +22,7 @@ static pid_t c_main_pid;
 /* List of thread ids for forked child */
 static int t_childs[100];
 static int t_cntr = 0;
+static int amount_bbs = 0;
 static int timeout = 0;
 static unsigned int bbs_hit = 0;
 static char *call_string;
@@ -29,6 +30,7 @@ static char **argv;
 static char **envp;
 
 static void *base_addr = 0;
+static char *bbs_map = NULL;
 
 static void handlebr(pid_t);
 static void handleclone(pid_t);
@@ -37,23 +39,24 @@ static void find_base();
 static void restore_byte(void *, struct br_map *, pid_t);
 static void *kill_child();
 
-
-void 
-init(struct struct_init *s_init)
+int
+start_program (struct struct_init *s_init)
 {
+  pthread_t t_kill;
+  int bbs = 0;
+
   hlist_br_mapping = s_init->hlist;
   path_pbin = s_init->p_binary;
   call_string = s_init->callstr;
   argv = s_init->callargv;
   envp = s_init->callenvp;
   timeout = s_init->timeout;
-}
+  amount_bbs = s_init->amount_bbs;
 
-int
-start_program ()
-{
-  pthread_t t_kill;
-  int bbs = 0;
+  s_init->bbs_map = malloc(amount_bbs / 8 + 1);
+
+  bbs_map = s_init->bbs_map;
+  memset(bbs_map, 0, amount_bbs / 8 + 1);
 
   c_main_pid = fork();
   if (!c_main_pid){
@@ -157,6 +160,8 @@ handlebr(pid_t c_waiting)
          regs.rip -= 1;
          ptrace(PTRACE_SETREGS, c_waiting, 0, &regs);
          bbs_hit++;
+
+         bbs_map[br_mapping->id / 8] |= 1 << (br_mapping->id % 8);
     }
 
 

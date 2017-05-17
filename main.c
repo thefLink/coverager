@@ -8,7 +8,7 @@
 static void usage();
 static struct br_map *parse_description(char *);
 static char **parse_child_args(char *);
-static void write_result(int, char **);
+static void write_result(struct struct_init *);
 
 int 
 main(int argc, char *argv[], char *envp[])
@@ -20,6 +20,7 @@ main(int argc, char *argv[], char *envp[])
   }
 
   int bbs_hit, timeout = 0;
+  unsigned int amount_bbs;
   char *callstring = argv[1];
   char *parameters = argv[2];
   char *description_path = argv[3];
@@ -35,6 +36,8 @@ main(int argc, char *argv[], char *envp[])
 
   printf("[*] Parsing description file\n");
   br_mapping  = parse_description(description_path);
+  amount_bbs = HASH_COUNT(br_mapping);
+  printf("[+] Found %d bbs\n", amount_bbs);
 
   s_init->hlist = br_mapping;
   s_init->p_binary = binarypath;
@@ -42,27 +45,33 @@ main(int argc, char *argv[], char *envp[])
   s_init->callargv = c_argv;
   s_init->callenvp = envp;
   s_init->timeout = timeout;
+  s_init->amount_bbs = amount_bbs;
+  s_init->bbs_map = NULL;
 
-  init(s_init);
-
-  bbs_hit = start_program();
+  bbs_hit = start_program(s_init);
+  s_init->bbs_hit = bbs_hit;
   
   printf("[!] BBS hit: %d\n", bbs_hit);
 
-  write_result(bbs_hit, c_argv);
+  write_result(s_init);
 
   return 0;
 }
 
 static void 
-write_result(int bbs_hit, char **parameters)
+write_result(struct struct_init *s_init)
 {
     FILE *logfile;
+    FILE *mapfile;
 
     logfile = fopen("result.txt", "a");
-    fprintf(logfile, "%s => %d hits\n", parameters[1], bbs_hit);
+    mapfile = fopen("bbs_map", "w");
+
+    fprintf(logfile, "%s => %d hits\n", s_init->callargv[1], s_init->bbs_hit);
+    fwrite(s_init->bbs_map, 1, s_init->amount_bbs / 8 + 1, mapfile);
 
     fclose(logfile);
+    fclose(mapfile);
 }
 
 
@@ -104,6 +113,7 @@ static struct br_map *parse_description(char *path)
     exit(1);
   }
 
+  int id = 0;
   while ((read = getline(&line, &len, fp)) != -1) {
 	
     line[strlen(line) - 1] = '\0';	
@@ -114,6 +124,8 @@ static struct br_map *parse_description(char *path)
     br_mapping = malloc(sizeof(struct br_map));
     br_mapping->lsb = (void *)lsb;
     br_mapping->orig_byte = byte;
+    br_mapping->id = id;
+    id++;
 
     HASH_ADD_PTR( hlist_br_map , lsb, br_mapping );  
   }

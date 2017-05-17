@@ -5,6 +5,7 @@
 #include <sys/reg.h>
 #include <sys/user.h>
 #include <sys/signal.h>
+#include <pthread.h>
 
 #include "mem_map_parser.c"
 #include "cov_measurer.h"
@@ -21,7 +22,12 @@ static pid_t c_main_pid;
 /* List of thread ids for forked child */
 static int t_childs[100];
 static int t_cntr = 0;
+static int timeout = 0;
 static unsigned int bbs_hit = 0;
+static char *call_string;
+static char **argv;
+static char **envp;
+
 static void *base_addr = 0;
 
 static void handlebr(pid_t);
@@ -29,18 +35,26 @@ static void handleclone(pid_t);
 static void start_monitoring();
 static void find_base();
 static void restore_byte(void *, struct br_map *, pid_t);
+static void *kill_child();
 
 
 void 
-init(struct br_map *hlist, char *p_binary)
+init(struct struct_init *s_init)
 {
-  hlist_br_mapping = hlist;
-  path_pbin = p_binary;
+  hlist_br_mapping = s_init->hlist;
+  path_pbin = s_init->p_binary;
+  call_string = s_init->callstr;
+  argv = s_init->callargv;
+  envp = s_init->callenvp;
+  timeout = s_init->timeout;
 }
 
-void 
-start_program (char *call_string, char *argv[], char *envp[])
+int
+start_program ()
 {
+  pthread_t t_kill;
+  int bbs = 0;
+
   c_main_pid = fork();
   if (!c_main_pid){
     /* The child process */
@@ -50,8 +64,18 @@ start_program (char *call_string, char *argv[], char *envp[])
     /* Not to be reached when execve succeeds */
   }else{
     /* Parent */
+    pthread_create(&t_kill, NULL, kill_child, NULL);
     start_monitoring();
   }
+
+  return bbs_hit;
+}
+
+static void *kill_child()
+{
+    sleep(timeout);
+    kill(c_main_pid, SIGKILL);
+    return NULL;
 }
 
 static void 
@@ -77,10 +101,12 @@ start_monitoring()
    while ( 1 ) {
        c_waiting = waitpid(-1, &status, __WALL);
 
-       if (WIFEXITED(status) && c_waiting == c_main_pid) {
+       if (status == 9) {
+           printf("[!] Child was killed by timeout\n");
+           break;
+       } else if (WIFEXITED(status) && c_waiting == c_main_pid) {
             /* Child exited normally */
            printf("[*] Child exited normally\n");
-           printf("[!] BBS hit: %d\n", bbs_hit);
            break;
        } else if (WIFSTOPPED(status)) {
             /* Process creates a new thread */
@@ -99,7 +125,6 @@ start_monitoring()
                     find_base();
                 }
 
-                /* Handle breakpoint */
                 handlebr(c_waiting);
             }else {
             /* Something unimportant happened */
@@ -126,9 +151,9 @@ handlebr(pid_t c_waiting)
     HASH_FIND_PTR(hlist_br_mapping, &lsb, br_mapping);
 
     if (!br_mapping) {
-      printf("[!] failed to map br: %llu\n", regs.rip - 1);  
+      printf("[!] failed to map br: %p\n", (void *)regs.rip - 1);  
     } else { 
-        restore_byte((void *)regs.rip - 1, br_mapping, c_waiting);
+         restore_byte((void *)regs.rip - 1, br_mapping, c_waiting);
          regs.rip -= 1;
          ptrace(PTRACE_SETREGS, c_waiting, 0, &regs);
          bbs_hit++;

@@ -10,5 +10,14 @@ struct br_map{
    UT_hash_handle hh; 
 };
 
+struct struct_init{
+    struct br_map *hlist;
+    char *p_binary;
+    char *callstr;
+    char **callargv;
+    char **callenvp;
+    int timeout;
+};
+
 /* Initialize the measurer with a hashlist of br_maps */
-void init(struct br_map *hlist_br_mapping, char *);
+void init(struct struct_init *s_init);

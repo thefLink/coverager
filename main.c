@@ -1,38 +1,70 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+
 #include "cov_measurer.c"
 #include "uthash.h"
 
 static void usage();
 static struct br_map *parse_description(char *);
 static char **parse_child_args(char *);
+static void write_result(int, char **);
 
-int main(int argc, char *argv[], char *envp[])
+int 
+main(int argc, char *argv[], char *envp[])
 {
   printf("[*] Coverager\n");
 
-  if(argc < 5){
+  if(argc < 6){
     usage();
   }
 
+  int bbs_hit, timeout = 0;
   char *callstring = argv[1];
   char *parameters = argv[2];
   char *description_path = argv[3];
   char *binarypath = argv[4];
+  char *timeout_str = argv[5];
 
   char **c_argv = parse_child_args(parameters);
-
   struct br_map *br_mapping;
+  struct struct_init *s_init;
+
+  s_init = malloc(sizeof(struct struct_init));
+  sscanf (timeout_str, "%d", &timeout);
 
   printf("[*] Parsing description file\n");
   br_mapping  = parse_description(description_path);
-  init(br_mapping, binarypath);
 
-  start_program(callstring, c_argv, envp);
+  s_init->hlist = br_mapping;
+  s_init->p_binary = binarypath;
+  s_init->callstr = callstring;
+  s_init->callargv = c_argv;
+  s_init->callenvp = envp;
+  s_init->timeout = timeout;
+
+  init(s_init);
+
+  bbs_hit = start_program();
+  
+  printf("[!] BBS hit: %d\n", bbs_hit);
+
+  write_result(bbs_hit, c_argv);
 
   return 0;
 }
+
+static void 
+write_result(int bbs_hit, char **parameters)
+{
+    FILE *logfile;
+
+    logfile = fopen("result.txt", "a");
+    fprintf(logfile, "%s => %d hits\n", parameters[1], bbs_hit);
+
+    fclose(logfile);
+}
+
 
 static char **
 parse_child_args(char *parameters)
@@ -92,6 +124,6 @@ static struct br_map *parse_description(char *path)
 
 static void usage()
 {
-  printf("Usage: ./prog.o <call_string> <argument> <patched_description> <path_to_patched_object>\n");
+  printf("Usage: ./prog.o <call_string> <argument> <patched_description> <path_to_patched_object> <timeout>\n");
   exit(0);
 }

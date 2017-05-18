@@ -74,7 +74,6 @@ write_result(struct struct_init *s_init)
     fclose(mapfile);
 }
 
-
 static char **
 parse_child_args(char *parameters)
 {

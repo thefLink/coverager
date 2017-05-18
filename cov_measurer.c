@@ -15,19 +15,13 @@
 #define printf_dbg printf
 #endif
 
-static struct br_map *hlist_br_mapping;
-static char *path_pbin;
 /* The pid of the forked process */
 static pid_t c_main_pid;
 /* List of thread ids for forked child */
 static int t_childs[100];
 static int t_cntr = 0;
 static int amount_bbs = 0;
-static int timeout = 0;
 static unsigned int bbs_hit = 0;
-static char *call_string;
-static char **argv;
-static char **envp;
 
 static void *base_addr = 0;
 static char *bbs_map = NULL;
@@ -38,23 +32,19 @@ static void start_monitoring();
 static void find_base();
 static void restore_byte(void *, struct br_map *, pid_t);
 static void *kill_child();
+static void showregs(pid_t);
+static struct struct_init *s_init;
 
 int
-start_program (struct struct_init *s_init)
+start_program (struct struct_init *init)
 {
   pthread_t t_kill;
   int bbs = 0;
 
-  hlist_br_mapping = s_init->hlist;
-  path_pbin = s_init->p_binary;
-  call_string = s_init->callstr;
-  argv = s_init->callargv;
-  envp = s_init->callenvp;
-  timeout = s_init->timeout;
+  s_init = init;
+
   amount_bbs = s_init->amount_bbs;
-
   s_init->bbs_map = malloc(amount_bbs / 8 + 1);
-
   bbs_map = s_init->bbs_map;
   memset(bbs_map, 0, amount_bbs / 8 + 1);
 
@@ -63,7 +53,7 @@ start_program (struct struct_init *s_init)
     /* The child process */
     printf("[*] about to call execve ... \n");
     ptrace(PTRACE_TRACEME, 0, 0, 0, 0);
-    execve(call_string, argv, envp);
+    execve(s_init->callstr, s_init->callargv, s_init->callenvp);
     /* Not to be reached when execve succeeds */
   }else{
     /* Parent */
@@ -76,8 +66,9 @@ start_program (struct struct_init *s_init)
 
 static void *kill_child()
 {
-    sleep(timeout);
+    sleep(s_init->timeout);
     kill(c_main_pid, SIGKILL);
+
     return NULL;
 }
 
@@ -117,7 +108,8 @@ start_monitoring()
                 handleclone(c_waiting);
             }else if (WSTOPSIG(status) == SIGSEGV) {
             /* Fuck ... :) */
-                printf("[!] segfault\n");
+                perror("[!] segfault\n");
+                showregs(c_waiting);
                 break;
             }else if(WSTOPSIG(status) == SIGTRAP){
                 /* Super ugly way to parse virtual mapping 
@@ -141,6 +133,17 @@ start_monitoring()
    }
 }
 
+static void
+showregs(pid_t c_waiting)
+{
+    struct user_regs_struct regs;
+    void *rip;
+
+    ptrace(PTRACE_GETREGS, c_waiting, 0, &regs);
+
+    fprintf(stderr, "[!] RIP: %p\n", regs.rip - 1);
+}
+
 static void 
 handlebr(pid_t c_waiting)
 {
@@ -151,7 +154,7 @@ handlebr(pid_t c_waiting)
     ptrace(PTRACE_GETREGS, c_waiting, 0, &regs);
     lsb =  (void *)(regs.rip - 1 - (long) base_addr);
 
-    HASH_FIND_PTR(hlist_br_mapping, &lsb, br_mapping);
+    HASH_FIND_PTR(s_init->hlist, &lsb, br_mapping);
 
     if (!br_mapping) {
       printf("[!] failed to map br: %p\n", (void *)regs.rip - 1);  
@@ -184,17 +187,17 @@ find_base()
 {
 #ifdef debug
     printf_db("[DEBUG] Trying to resolve base address for: %s\n",
-            path_pbin);
+            s_init->p_binary);
 #endif
    struct mem_map *memory_mapping;
    struct mem_map *memory_mapping_found;
 
    memory_mapping = parse_mem(c_main_pid);
-   HASH_FIND_STR(memory_mapping, path_pbin, memory_mapping_found);
+   HASH_FIND_STR(memory_mapping, s_init->p_binary, memory_mapping_found);
 
    if (!memory_mapping_found){
         printf("[!] Failed to resolve base address for: %s\n", 
-                path_pbin);
+                s_init->p_binary);
         printf("[!] Retrying ... \n");
    }else{
         printf("[+] %s is at %p\n", memory_mapping_found->path,

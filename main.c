@@ -2,7 +2,7 @@
 #include <stdlib.h>
 
 
-#include "cov_measurer.c"
+#include "cov_measurer.h"
 #include "uthash.h"
 
 static void usage();

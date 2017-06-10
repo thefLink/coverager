@@ -6,9 +6,10 @@
 #include <sys/user.h>
 #include <sys/signal.h>
 #include <pthread.h>
+#include <stdio.h>
 
-#include "mem_map_parser.c"
 #include "cov_measurer.h"
+#include "mem_map_parser.h"
 #include "uthash.h"
 
 #ifdef DEBUG

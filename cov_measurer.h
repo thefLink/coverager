@@ -23,5 +23,5 @@ struct struct_init{
     unsigned int amount_bbs;
 };
 
-/* Initialize the measurer with a hashlist of br_maps */
-void init(struct struct_init *s_init);
+/* Initialize the measurer with a hashlist of br_maps and run the prog*/
+int start_program(struct struct_init *init);

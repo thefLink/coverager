@@ -29,7 +29,7 @@ parse_mem(int pid)
     struct mem_map* check;
     while ((map_tmp = next_mem_map(f_mapping)) != NULL) {
        HASH_FIND_STR(hlist_mem_map, map_tmp->path, check);
-       if (!check){
+       if ( !check ){
             HASH_ADD_STR(hlist_mem_map, path, map_tmp);
        }
     }
@@ -47,7 +47,7 @@ next_mem_map(FILE *f_mapping)
   char *line, *pEnd , *element = NULL;
   size_t len = 0;
   ssize_t read;
-  struct mem_map *next_mem_map;
+  struct mem_map *next_mem_map = NULL;
   int cntr = 0;
   long v_addr_start, v_addr_end;
 
@@ -67,16 +67,18 @@ next_mem_map(FILE *f_mapping)
         }else if (cntr == 5) {
             /* path in FS for binary */
             element[strlen (element) - 1] = 0;
-            strncpy(next_mem_map->path, element, MAX_PATH);
+            strncpy(next_mem_map->path, element, strlen(element));
         }
           
         element = strtok(NULL, " ");
         ++cntr;
+
       }
 
+      free(element);
+      free(line);
+
+    }
+
       return next_mem_map;
-  } else {
-  /* Otherwise return NULL */
-      return NULL;
-  }
 }

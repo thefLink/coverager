@@ -17,6 +17,8 @@ static int              timeout;
 static char             *c_executable, *patched_executable;
 static struct           struct_br_map *hlist_br_mapping = NULL;
 unsigned long           base_addr;
+char                    *bitmap = NULL;
+struct                  mem_map *memory_mapping;
 
 /* Functions */
 static char             **parse_args(char *);
@@ -26,11 +28,30 @@ static void             monitor_tracee(pid_t c_pid, char *);
 static void             *kill_child(void *);
 static void             handle_int3(pid_t, char *);
 
+// int
+// main()
+// {
+//     FILE *f = fopen("patched_description", "rb");
+//     fseek(f, 0, SEEK_END);
+//     long fsize = ftell(f);
+//     fseek(f, 0, SEEK_SET);  //same as rewind(f);
+// 
+//     char *string = malloc(fsize + 1);
+//     fread(string, fsize, 1, f);
+//     fclose(f);
+// 
+//     string[fsize] = 0;
+// 
+//     init_coveraging(string, "/usr/bin/evince", "/usr/lib/libevview3.so.3.0.0", 1);
+//     generate_bitmap("asdf");
+// 
+//     free(string);
+// }
+
 char *
 generate_bitmap(char *c_parameters)
 {
     char **c_argv;
-    char *bitmap = NULL;
     pid_t c_pid;
     pthread_t t_kill;
     int num_bbs;
@@ -42,7 +63,7 @@ generate_bitmap(char *c_parameters)
     /* Initialise bitmap */
     num_bbs = HASH_COUNT(hlist_br_mapping);
     if ( !bitmap ){
-        bitmap = malloc(num_bbs/ 8 + 1);
+        bitmap = malloc(num_bbs / 8 + 1);
     }
     memset(bitmap, 0, num_bbs / 8 + 1);
 
@@ -63,12 +84,14 @@ generate_bitmap(char *c_parameters)
     /* Loop to handle signals */
     monitor_tracee(c_pid, bitmap);
 
+    pthread_join(t_kill, NULL);
     free(c_argv);
+
     return bitmap;
 }
 
 /* Handles signals of tracee */
-void monitor_tracee( pid_t c_pid, char *bitmap)
+static void monitor_tracee( pid_t c_pid, char *bitmap)
 {
     int status;
     pid_t waiting_pid = 0;
@@ -90,14 +113,13 @@ void monitor_tracee( pid_t c_pid, char *bitmap)
             continue;
         }
 
-        //printf("parent: %d child: %d=> %s\n", c_pid, waiting_pid, strsignal(WSTOPSIG(status)));
 
         if ( !base_addr ) {
             base_addr = find_base(c_pid, patched_executable);
         }
 
         if ( status == SIGKILL ) {
-    //        printf("[!] Child killed by timeout\n");
+            printf("[!] Child killed by timeout\n");
             break;
         } else if ( WIFEXITED(status) ) {
 
@@ -131,7 +153,6 @@ void monitor_tracee( pid_t c_pid, char *bitmap)
         /* Continue execution */
         if ( ptrace(PTRACE_CONT, waiting_pid, 0, 0) < 0 ) {
             perror("ptrace_cont");
-            sleep(timeout);
             break;
         }
     }
@@ -267,29 +288,69 @@ init_coveraging(char *mapping, char *path_child_executable, char *path_patched_e
    }
 }
 /* Finds base address in memory layout for a given binary path */
-static unsigned long 
-find_base(pid_t c_main_pid, char* path_binary)
+static unsigned long
+find_base(pid_t c_main_pid, char *path_binary)
 {
-   struct mem_map *memory_mapping;
-   struct mem_map *memory_mapping_found;
-   unsigned long base_addr;
+    char proc_map_path[100];
+    char *line, *pEnd, *element;
+    size_t len = 0;
+    ssize_t read;
+    int cntr = 0, found = 0;
+    FILE *f_mapping; 
+    unsigned long v_addr_start;
 
-   memory_mapping = parse_mem(c_main_pid);
-   HASH_FIND_STR(memory_mapping, path_binary, memory_mapping_found);
+    sprintf(proc_map_path, "/proc/%d/maps", c_main_pid);
+    f_mapping = fopen(proc_map_path, "r");
 
-   if (!memory_mapping_found){
-        printf("[!] Failed to resolve base address for: %s\n", path_binary);
-        sleep(1);
-   }else{
-//        printf("[+] %s is at %p\n", memory_mapping_found->path,
-//               memory_mapping_found->start);
-        base_addr = (unsigned long) memory_mapping_found->start;
-   }
+    if (!f_mapping){
+     perror("[!] Could not open mapfile");
+     exit(1);
+    }
 
-   free(memory_mapping);
+    while ((read = getline(&line, &len, f_mapping)) != -1 && !found){
+        element = strtok(line, " ");
+        cntr = 0;
+        while ( element != NULL ) {
+            if ( cntr == 0 ){
+               /* element = start and end addr in vaddress */
+               v_addr_start = strtol(element, &pEnd, 16);
+            }else if ( cntr == 5 ){
+            /* path in FS for binary */
+                element[strlen (element) - 1] = 0;
+                if ( !strcmp(path_binary, element )){
+                    printf("gotcha: %s\n", element);
+                    found = 1;
+                    break;
+                }
+            }
 
-   return base_addr;
+            element = strtok(NULL, " ");
+            ++cntr;
+        }
+    }
+
+    fclose(f_mapping);
+    return v_addr_start;
 }
+// static unsigned long 
+// find_base(pid_t c_main_pid, char* path_binary)
+// {
+// 
+//    struct mem_map *memory_mapping_found;
+//    unsigned long base_addr;
+// 
+//    memory_mapping = parse_mem(c_main_pid);
+//    HASH_FIND_STR(memory_mapping, path_binary, memory_mapping_found);
+// 
+//    if (!memory_mapping_found){
+//         printf("[!] Failed to resolve base address for: %s\n", path_binary);
+//         sleep(1);
+//    }else{
+//         base_addr = (unsigned long) memory_mapping_found->start;
+//    }
+// 
+//   return base_addr;
+//}
 
 /* To be called by ctypes */
 void 

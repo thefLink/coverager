@@ -21,4 +21,5 @@ struct mem_map{
 /* Parses entire /proc/[pid]/maps
  * Returns: hashlist with all found mappings
 */
+//struct mem_map *parse_mem(int);
 struct mem_map *parse_mem(int);

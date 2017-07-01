@@ -10,6 +10,7 @@
 
 #include "libcoverager.h"
 #include "uthash.h"
+#include "mem_map_parser.h"
 
 /* Global variables */
 static int              timeout;

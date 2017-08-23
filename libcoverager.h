@@ -24,6 +24,7 @@ typedef struct {
     char *bitmap;
     char *arguments;
     int bitmap_size;
+    int bbs_counter;
 } execution_infos;
 
 /* Initialise with content of a description file*/

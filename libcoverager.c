@@ -20,9 +20,9 @@ meta_infos_run_binary     *meta_infos;
 char             **parse_args(char *);
 void             find_base(pid_t, char*, unsigned long *);
 void             restore_byte(pid_t, unsigned long, int );
-void             monitor_tracee(pid_t c_pid, char *);
+void             monitor_tracee(pid_t c_pid, char *, int *);
 void             *kill_child(void *);
-void             handle_int3(pid_t, char *, unsigned long);
+void             handle_int3(pid_t, char *, unsigned long, int * );
 
 void
 generate_bitmap(execution_infos *exec_infos)
@@ -43,7 +43,6 @@ generate_bitmap(execution_infos *exec_infos)
     memset(exec_infos->bitmap, 0, num_bbs / 8 + 1);
 
     /* Create child */
-    setpgid(0, 0);
     c_pid = fork();
 
     if ( !c_pid ) {
@@ -56,30 +55,28 @@ generate_bitmap(execution_infos *exec_infos)
         dup2(fd_devnull, 2);
         
         ptrace(PTRACE_TRACEME, 0, 0, 0, 0);
+
         if ( execv(meta_infos->run_path, c_argv) < 0 ) {
             perror("execv");
             exit(-1);
         }
     }
 
-
     /* Kill the child after specified timeout */
     pthread_create(&t_kill, NULL, kill_child, (void *) &c_pid);
 
     /* Loop to handle signals */
-    monitor_tracee(c_pid, exec_infos->bitmap);
+    monitor_tracee(c_pid, exec_infos->bitmap, &exec_infos->bbs_counter);
 
     /* Free all the memory \o/ */
     pthread_join(t_kill, NULL);
-    for ( i = 0; c_argv[i] != NULL; i++ )
-        free( c_argv[i] );
-
     free(c_argv);
 
 }
 
 /* Handles signals of tracee */
-void monitor_tracee( pid_t c_pid, char *bitmap)
+void 
+monitor_tracee( pid_t c_pid, char *bitmap, int *bbs_counter)
 {
     int status;
     pid_t waiting_pid = 0;
@@ -98,7 +95,7 @@ void monitor_tracee( pid_t c_pid, char *bitmap)
 
     while ( 1 ) {
 
-        waiting_pid = waitpid(0, &status, __WALL);
+        waiting_pid = waitpid(-1, &status, __WALL);
         if ( waiting_pid < c_pid) 
             continue;
         
@@ -118,17 +115,17 @@ void monitor_tracee( pid_t c_pid, char *bitmap)
         } else if WIFSTOPPED(status) {
 
            if ( WSTOPSIG(status) == SIGSEGV ){
-             bitmap = "[!] SIGSEGV"; 
-             break;
+             printf("[!] SIGSEGV\n");
+             exit(0);
+             
            } else if ( WSTOPSIG(status) == SIGTRAP ) {
                /* Child hit a breakpoint */
-               if ( status >> 16 == PTRACE_EVENT_CLONE ) {
+               if ( status >> 16 == PTRACE_EVENT_CLONE ) 
                    /* Trap cause of clone call */
                    ptrace(PTRACE_GETEVENTMSG, waiting_pid, 0, (long)&newpid);
-               }
                else 
                     /* Trap is a breakpoint */
-                   handle_int3(waiting_pid, bitmap, base_addr);
+                   handle_int3(waiting_pid, bitmap, base_addr, bbs_counter);
            }
         }
 
@@ -143,8 +140,9 @@ void monitor_tracee( pid_t c_pid, char *bitmap)
 
 /* Called when child hits a breakpoint */
 void
-handle_int3(pid_t pid_waiting, char* bitmap, unsigned long base_addr)
+handle_int3(pid_t pid_waiting, char* bitmap, unsigned long base_addr, int *bbs_counter)
 {
+
     struct user_regs_struct registers;
     unsigned long offset;
     struct_br_map *br_mapping;
@@ -173,6 +171,7 @@ handle_int3(pid_t pid_waiting, char* bitmap, unsigned long base_addr)
 
        /* Set bit in bitmap for hit BB */
        bitmap[br_mapping->id / 8] |= 1 << (br_mapping->id % 8);        
+       (*bbs_counter)++;
     }
 }
 
@@ -213,36 +212,24 @@ char **
 parse_args(char *argv)
 {
 
+    char ** c_argv = (char **) malloc(sizeof(char *) * 5);
+    char *proc_name = "gen by coverager";
+    int cntr_args = 0;
 
-   char **c_argv = (char **) malloc(sizeof(char *) * 20);
-   char *arg_tmp = NULL;
-   int cntr = 0;
-   char test[50];
+    c_argv[cntr_args++] = proc_name;
 
-   sprintf(test, "%d", getpid());
-   arg_tmp = malloc(sizeof(char) * strlen(test) + 1);
-   strncpy(arg_tmp, test, strlen(test));
-   c_argv[cntr] = arg_tmp;
-   ++cntr;
+    argv = strtok(argv, " ");
+    while ( argv != NULL && cntr_args < 19 ) {
 
-   argv = strtok(argv, " ");
+        c_argv[cntr_args++] = argv;
+        argv= strtok(NULL, " ");
 
-   while (argv != NULL && cntr < 19) {
+    }
 
-       arg_tmp = (char *) malloc(sizeof(char) * strlen(argv) + 1);
-       strncpy(arg_tmp, argv, strlen(argv));
-       arg_tmp[strlen(argv)] = 0x00;
-       c_argv[cntr] = arg_tmp;
-       
-       ++cntr;
-       argv= strtok(NULL, " ");
-   }
+    c_argv[cntr_args] = NULL;
 
+    return c_argv;
 
-   c_argv[cntr] = NULL;
-
-   free(argv);
-   return c_argv;
 }
 
 /* Init with content of description file
@@ -305,7 +292,7 @@ find_base(pid_t c_main_pid, char *path_binary, unsigned long *base_addr)
                /* element = start and end addr in vaddress */
                v_addr_start = strtol(element, &pEnd, 16);
             }else if ( cntr == 5 ){
-            /* path in FS for binary */
+                /* path in FS for binary */
                 element[strlen (element) - 1] = 0;
                 if ( !strcmp(path_binary, element )){
                     found = 1;
@@ -323,5 +310,4 @@ find_base(pid_t c_main_pid, char *path_binary, unsigned long *base_addr)
     fclose(f_mapping);
     *base_addr = v_addr_start;
 
-    // printf("[+] %s is at %p\n", path_binary, base_addr);
 }

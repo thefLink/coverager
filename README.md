@@ -1,7 +1,7 @@
 # coverager
 Generating code coverage for closed source applications [linux]
 
-This is a port of Jaanus Kääp's 'Kaval Ants' to linux.
+Based on the idea of Jaanus Kääp's 'Kaval Ants'.
 
 https://github.com/JaanusFuzzing/KavalAnts
 
